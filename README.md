@@ -13,4 +13,14 @@ pip install git+https://github.com/deepmind/dm-haiku
 
 ## COIN
 
-![](coin_example.jpg)
+```commandline
+python coin.py
+```
+
+### Original Image
+
+![](cat.jpg)
+
+### Compressed Image
+
+![](coin_example.png)

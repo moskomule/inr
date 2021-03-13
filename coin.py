@@ -18,8 +18,9 @@ def model_fn(xy: np.ndarray,
     mlp0 = hk.nets.MLP([width], activation=jnp.sin,
                        w_init=hk.initializers.RandomUniform(-np.sqrt(1 / 2), np.sqrt(1 / 2)))
     w_init = hk.initializers.RandomUniform(-np.sqrt(6 / width), np.sqrt(6 / width))
-    mlp = hk.nets.MLP([width for _ in range(depth - 2)] + [3], activation=jnp.sin, w_init=w_init)
-    return mlp(mlp0(xy))
+    mlp1 = hk.nets.MLP([width for _ in range(depth - 2)], activation=jnp.sin, w_init=w_init)
+    mlp2 = hk.Linear(3, w_init=w_init)
+    return jax.nn.sigmoid(mlp2(mlp1(mlp0(xy))))
 
 
 def load_img(path: str
@@ -40,13 +41,19 @@ def _img_sample(key: np.ndarray,
     return xy, rgb
 
 
-def main(iters=100_000, batch_size=512, depth=5, width=50, report_freq=10_000):
+def main(iters=100_000,
+         batch_size=1024,
+         depth=10,
+         width=50,
+         report_freq=10_000,
+         out_width=355 * 4,
+         out_height=200 * 4):
     rng_key = jax.random.PRNGKey(42)
     _model = hk.transform(functools.partial(model_fn, depth=depth, width=width))
     model = hk.without_apply_rng(_model)
     image = load_img("cat.jpg")
     image_sample = jax.jit(jax.vmap(functools.partial(_img_sample, image=image)))
-    opt = optax.adam(2e-4)
+    opt = optax.adam(3e-4)
 
     def loss_impl(params, batch):
         xy, rgb = batch
@@ -70,10 +77,12 @@ def main(iters=100_000, batch_size=512, depth=5, width=50, report_freq=10_000):
         params, opt_state, loss = update(params, opt_state, image_sample(jax.random.split(next_rng, batch_size)))
         loss_list.append(loss)
         if i % report_freq == 0:
-            x, y = jnp.meshgrid(jnp.linspace(-1, 1, 200), jnp.linspace(-1, 1, 355).reshape(-1))
+            x, y = jnp.meshgrid(jnp.linspace(-1, 1, out_height), jnp.linspace(-1, 1, out_width).reshape(-1))
             xy = jnp.stack([x.reshape(-1), y.reshape(-1)], axis=1)
             out = model.apply(params=params, xy=xy)
-            out_img = Image.fromarray(np.asarray(out * 255).astype(np.uint8).reshape(355, 200, 3).transpose(1, 0, 2))
+            out_img = Image.fromarray(
+                np.asarray(out * 255).astype(np.uint8).reshape(out_width, out_height, 3).transpose(1, 0, 2)
+            )
             out_img.save(f"{i}.jpg")
             print(f"{i:>7} {sum(loss_list) / report_freq:.3e}")
             loss_list = []
